@@ -16,7 +16,7 @@ class Config:
         self.tmp_model_dir = "/tmp"
 
         self.data_dir = "./data/processed"
-        self.train_file = self.data_dir + "/train.json"
+        self.train_file = self.data_dir + "/train.jsonl"
         self.dev_file = self.data_dir + "/dev.jsonl"
         self.test_file = self.data_dir + "/test.jsonl"
         self.wordvec_file = self.data_dir + "/wordvec.txt"

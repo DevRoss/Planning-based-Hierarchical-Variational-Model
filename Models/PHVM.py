@@ -1,18 +1,20 @@
-import tensorflow as tf
-import numpy as np
-import os
-import sys
 import collections
+
+import numpy as np
+import tensorflow as tf
+
 from Models import model_utils
 
+
 class PHVMBatchInput(collections.namedtuple("PHVMBatchInput",
-                                          ("key_input", "val_input", "input_lens",
-                                           "target_input", "target_output", "output_lens",
-                                           "group", "group_lens", "group_cnt",
-                                           "target_type", "target_type_lens",
-                                           "text", "slens",
-                                           "category"))):
+                                            ("key_input", "val_input", "input_lens",
+                                             "target_input", "target_output", "output_lens",
+                                             "group", "group_lens", "group_cnt",
+                                             "target_type", "target_type_lens",
+                                             "text", "slens",
+                                             "category"))):
     pass
+
 
 class PHVMConfig:
     def __init__(self):
@@ -86,6 +88,7 @@ class PHVMConfig:
         # inference
         self.PHVM_beam_width = 10
         self.PHVM_maximum_iterations = 50
+
 
 class PHVM:
     def __init__(self, key_vocab_size, val_vocab_size, tgt_vocab_size, cate_vocab_size,
@@ -316,7 +319,7 @@ class PHVM:
         with tf.variable_scope("top_level"):
 
             with tf.variable_scope("prior_network"):
-                prior_input = tf.concat((cate_embed, src_embed), 1)
+                prior_input = tf.concat((cate_embed, src_embed), 1)  # 输入是类型+关键词的embed
                 prior_fc = tf.layers.dense(prior_input, self.config.PHVM_plan_latent_dim * 2, activation=tf.tanh)
                 prior_fc_nd = tf.layers.dense(prior_fc, self.config.PHVM_plan_latent_dim * 2)
                 prior_mu, prior_logvar = tf.split(prior_fc_nd, 2, 1)
@@ -387,13 +390,14 @@ class PHVM:
 
             with tf.variable_scope("parameters"):
                 with tf.variable_scope("init_state"):
+                    #
                     group_init_state_fc = tf.layers.Dense(self.config.PHVM_group_decoder_dim)
                     if self.config.PHVM_rnn_direction == 'uni':
                         init_gbow = tf.get_variable("start_of_group", dtype=tf.float32,
                                                     shape=(1, self.config.PHVM_encoder_dim))
                     else:
                         init_gbow = tf.get_variable("start_of_group", dtype=tf.float32,
-                                                   shape=(1, 2 * self.config.PHVM_encoder_dim))
+                                                    shape=(1, 2 * self.config.PHVM_encoder_dim))
                     plan_init_state_fc = tf.layers.Dense(self.config.PHVM_latent_decoder_dim)
 
                 prior_fc_layer = tf.layers.Dense(self.config.PHVM_sent_latent_dim * 2)
@@ -446,7 +450,7 @@ class PHVM:
                             sent_embed = tf.concat((sent_encoder_state[0], sent_encoder_state[1]), 1)
 
                     with tf.name_scope("group"):
-                        sent_gid = gidx[:, i, :, :]
+                        sent_gid = gidx[:, i, :, :]  # [batch, num_sentence, seq_len, hidden_dim]
                         sent_group = group_bow[:, i, :, :]
                         sent_group_len = self.input.group_lens[:, i]
                         safe_sent_group_len = sent_group_len + tf.cast(tf.equal(sent_group_len, 0), dtype=tf.int32)
@@ -465,7 +469,7 @@ class PHVM:
                             src_mask = tf.sequence_mask(self.input.input_lens, tf.shape(group_logit)[1],
                                                         dtype=tf.float32)
                             group_crossent = loss_mask * tf.reduce_sum(group_crossent * src_mask, 1)
-                            group_rec_loss += tf.reduce_sum(group_crossent) # / effective_cnt
+                            group_rec_loss += tf.reduce_sum(group_crossent)  # / effective_cnt
 
                         gbow = group_mean_bow[:, i, :]
 
@@ -507,7 +511,7 @@ class PHVM:
                     with tf.name_scope("KL_divergence"):
                         divergence = loss_mask * self.KL_divergence(sent_prior_mu, sent_prior_logvar,
                                                                     sent_post_mu, sent_post_logvar, False)
-                        KL_loss += tf.reduce_sum(divergence) # / effective_cnt
+                        KL_loss += tf.reduce_sum(divergence)  # / effective_cnt
 
                     with tf.name_scope("type_loss"):
                         if self.config.PHVM_use_type_info:
@@ -517,14 +521,14 @@ class PHVM:
                             type_crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=sent_type,
                                                                                            logits=type_logit)
                             type_crossent = loss_mask * tf.reduce_sum(type_crossent * sent_type_mask, 1)
-                            type_loss += tf.reduce_sum(type_crossent) # / effective_cnt
+                            type_loss += tf.reduce_sum(type_crossent)  # / effective_cnt
                         else:
                             type_loss = 0.0
 
                     with tf.name_scope("sent_deocde"):
                         with tf.variable_scope("sent_dec_state"):
                             if self.config.PHVM_use_type_info:
-                                sent_dec_input = tf.concat((sent_cond_z_embed, gbow, sent_type_embed), 1)
+                                sent_dec_input = tf.concat((sent_cond_z_embed, gbow, sent_type_embed), 1)  # z + gbow + 实体类型（裙子，上衣等）
                             else:
                                 sent_dec_input = tf.concat((sent_cond_z_embed, gbow), 1)
                             sent_dec_state = []
@@ -543,7 +547,7 @@ class PHVM:
                                                                                     sent_group,
                                                                                     memory_sequence_length=safe_sent_group_len)
                         train_decoder = tf.contrib.seq2seq.AttentionWrapper(decoder, attention_mechanism,
-                                                                    attention_layer_size=self.config.PHVM_decoder_dim)
+                                                                            attention_layer_size=self.config.PHVM_decoder_dim)
                         train_encoder_state = train_decoder.zero_state(self.batch_size, dtype=tf.float32).clone(
                             cell_state=sent_dec_state)
                         helper = tf.contrib.seq2seq.TrainingHelper(sent_input, sent_lens, time_major=False)
@@ -557,7 +561,7 @@ class PHVM:
                                                                                        logits=sent_logit)
                         cali_sent_mask = sent_mask[:, :tf.shape(sent_logit)[1]]
                         sent_crossent = loss_mask * tf.reduce_sum(sent_crossent * cali_sent_mask, axis=1)
-                        sent_rec_loss += tf.reduce_sum(sent_crossent) # / effective_cnt
+                        sent_rec_loss += tf.reduce_sum(sent_crossent)  # / effective_cnt
 
                         with tf.name_scope("bow_loss"):
                             bow_logit = bow_fc_2(tf.tanh(bow_fc_1(sent_dec_input)))
@@ -565,7 +569,7 @@ class PHVM:
                             bow_crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=sent_output,
                                                                                           logits=bow_logit)
                             bow_crossent = loss_mask * tf.reduce_sum(bow_crossent * sent_mask, axis=1)
-                            bow_loss += tf.reduce_sum(bow_crossent) # / effective_cnt
+                            bow_loss += tf.reduce_sum(bow_crossent)  # / effective_cnt
 
                         with tf.variable_scope("sent_state_update"):
                             sent_state = fstate.cell_state[self.config.PHVM_decoder_num_layer - 1]
@@ -578,7 +582,7 @@ class PHVM:
                     return i + 1, group_state, gbow, plan_state, sent_state, sent_z, \
                            stop_sign, sent_rec_loss, group_rec_loss, KL_loss, type_loss, bow_loss
 
-                group_state = group_init_state_fc(dec_input)
+                group_state = group_init_state_fc(dec_input)  # 这个就是解码group的
                 gbow = tf.tile(init_gbow, [self.batch_size, 1])
                 plan_state = plan_init_state_fc(tf.concat((dec_input, group_embed), 1))
                 sent_state = decoder.zero_state(self.batch_size, dtype=tf.float32)[
@@ -632,10 +636,12 @@ class PHVM:
                     self.train_summary = tf.summary.merge([tf.summary.scalar("learning rate", self.learning_rate),
                                                            tf.summary.scalar("train_loss", self.train_loss),
                                                            tf.summary.scalar("elbo", self.elbo_loss),
-                                                           tf.summary.scalar("sent_KL_divergence", self.sent_KL_divergence / tf.to_float(self.batch_size)),
+                                                           tf.summary.scalar("sent_KL_divergence",
+                                                                             self.sent_KL_divergence / tf.to_float(self.batch_size)),
                                                            tf.summary.scalar("anneal_sent_KL", anneal_sent_KL / tf.to_float(self.batch_size)),
                                                            tf.summary.scalar("anneal_plan_KL", anneal_plan_KL / tf.to_float(self.batch_size)),
-                                                           tf.summary.scalar("plan_KL_divergence", self.plan_KL_divergence / tf.to_float(self.batch_size)),
+                                                           tf.summary.scalar("plan_KL_divergence",
+                                                                             self.plan_KL_divergence / tf.to_float(self.batch_size)),
                                                            tf.summary.scalar("sent_rec_loss", self.sent_rec_loss / tf.to_float(self.batch_size)),
                                                            tf.summary.scalar("group_rec_loss", self.group_rec_loss / tf.to_float(self.batch_size)),
                                                            tf.summary.scalar("type_loss", self.type_loss / tf.to_float(self.batch_size)),
@@ -663,10 +669,10 @@ class PHVM:
                             next_stop = tf.greater(tf.sigmoid(tf.squeeze(stop_clf(gout), axis=1)),
                                                    self.config.PHVM_stop_threshold)
                             stop += tf.cast(tf.equal(stop, 0), dtype=tf.int32) * tf.cast(next_stop, dtype=tf.int32) * (
-                                        i + 1)
+                                    i + 1)
 
                             tile_gout = tf.tile(tf.expand_dims(gout, 1), [1, tf.shape(src_encoder_output)[1], 1])
-                            group_fc_input = tf.concat((src_encoder_output, tile_gout), 2)
+                            group_fc_input = tf.concat((src_encoder_output, tile_gout), 2)  # src_encoder_output = k, v 过了RNN
                             group_logit = tf.squeeze(group_fc_2(tf.tanh(group_fc_1(group_fc_input))), 2)
 
                             def select(group_prob, max_gcnt):
@@ -682,7 +688,7 @@ class PHVM:
                                         if p > max_p:
                                             max_gsid = gsid
                                             max_p = p
-                                    if len(tmp) == 0:
+                                    if len(tmp) == 0:  # 使得每个group最少有一个关键词
                                         tmp.append([gfid, max_gsid])
                                     gid.append(tmp)
                                     glen.append(len(tmp))
@@ -701,7 +707,7 @@ class PHVM:
                             expanded_glen = tf.expand_dims(glen, 1)
                             groups = tf.concat((groups, tf.transpose(gid[:, :, 1:], [0, 2, 1])), 1)
                             glens = tf.concat((glens, expanded_glen), 1)
-                            group = tf.gather_nd(src_encoder_output, gid)
+                            group = tf.gather_nd(src_encoder_output, gid)  # [num_group, group_len, group_emb_dim]
                             group_mask = tf.sequence_mask(glen, tf.shape(group)[1], dtype=tf.float32)
                             expanded_group_mask = tf.expand_dims(group_mask, 2)
                             gbow = tf.reduce_sum(group * expanded_group_mask, axis=1) / tf.to_float(
@@ -715,13 +721,13 @@ class PHVM:
                         else:
                             group_state_shape = tf.TensorShape([None, None])
 
-                        shape_invariants = (tf.TensorShape([]), # i
-                                            group_state_shape, # group_state
-                                            tf.TensorShape([None, None]), # gbow
-                                            tf.TensorShape([None, None, None]), # groups
-                                            tf.TensorShape([None, None]), # glens
-                                            tf.TensorShape([None]) # stop
-                        )
+                        shape_invariants = (tf.TensorShape([]),  # i
+                                            group_state_shape,  # group_state
+                                            tf.TensorShape([None, None]),  # gbow
+                                            tf.TensorShape([None, None, None]),  # groups
+                                            tf.TensorShape([None, None]),  # glens
+                                            tf.TensorShape([None])  # stop
+                                            )
 
                         group_state = group_init_state_fc(dec_input)
                         gbow = tf.tile(init_gbow, [self.batch_size, 1])
@@ -802,7 +808,7 @@ class PHVM:
                                                                          tile_group,
                                                                          memory_sequence_length=tile_glen)
                         infer_decoder = tf.contrib.seq2seq.AttentionWrapper(decoder, tile_att,
-                                                                attention_layer_size=self.config.PHVM_decoder_dim)
+                                                                            attention_layer_size=self.config.PHVM_decoder_dim)
                         tile_encoder_state = tf.contrib.seq2seq.tile_batch(sent_dec_state,
                                                                            multiplier=self.config.PHVM_beam_width)
                         decoder_initial_state = infer_decoder.zero_state(
@@ -820,8 +826,8 @@ class PHVM:
                         )
                         with tf.variable_scope("dynamic_decoding", reuse=True):
                             fout, fstate, flen = tf.contrib.seq2seq.dynamic_decode(self.beam_decoder,
-                                                        output_time_major=False,
-                                                        maximum_iterations=self.config.PHVM_maximum_iterations)
+                                                                                   output_time_major=False,
+                                                                                   maximum_iterations=self.config.PHVM_maximum_iterations)
                             sent_output = tf.transpose(fout.predicted_ids, [0, 2, 1])[:, 0, :]
                             sent_output = sent_output * tf.to_int32(tf.greater_equal(sent_output, 0))
                             dist = self.config.PHVM_maximum_iterations - tf.shape(sent_output)[1]
@@ -842,7 +848,7 @@ class PHVM:
                                                                     sent_group,
                                                                     memory_sequence_length=sent_glen)
                         infer_encoder = tf.contrib.seq2seq.AttentionWrapper(decoder, att,
-                                                            attention_layer_size=self.config.PHVM_decoder_dim)
+                                                                            attention_layer_size=self.config.PHVM_decoder_dim)
                         sent_input = tf.nn.embedding_lookup(self.word_embedding, sent_output)
                         encoder_state = infer_encoder.zero_state(self.batch_size, dtype=tf.float32).clone(
                             cell_state=sent_dec_state)
@@ -864,12 +870,12 @@ class PHVM:
                 else:
                     plan_state_shape = tf.TensorShape([None, None])
                 sent_state_shape = plan_state_shape
-                shape_invariants = (tf.TensorShape([]), # i
-                                    plan_state_shape, # plan_state
-                                    sent_state_shape, # sent_state
-                                    tf.TensorShape([None, None]), # sent_z
+                shape_invariants = (tf.TensorShape([]),  # i
+                                    plan_state_shape,  # plan_state
+                                    sent_state_shape,  # sent_state
+                                    tf.TensorShape([None, None]),  # sent_z
 
-                                    tf.TensorShape([None, None, None]), # translations
+                                    tf.TensorShape([None, None, None]),  # translations
                                     )
                 plan_state = plan_init_state_fc(tf.concat((dec_input, group_embed), 1))
                 sent_state = decoder.zero_state(self.batch_size, dtype=tf.float32)[

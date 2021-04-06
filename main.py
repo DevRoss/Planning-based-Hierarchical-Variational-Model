@@ -1,4 +1,5 @@
 import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import sys
 import numpy as np
 import json
@@ -126,7 +127,14 @@ def train(model_name, restore=True):
 					  type_vocab_size=len(dataset.vocab.id2type))
 	init = {'epoch': 0, 'worse_step': 0}
 	if restore:
-		init['epoch'], init['worse_step'], model = model_utils.restore_model(model,
+		print('='* 20)
+		print(config.checkpoint_dir, model_name, config.tmp_model_dir)
+		print('=' * 20)
+		print(config.checkpoint_dir, model_name, config.best_model_dir)
+		# init['epoch'], init['worse_step'], model = model_utils.restore_model(model,
+		# 									config.checkpoint_dir + "/" + model_name + config.tmp_model_dir,
+		# 									config.checkpoint_dir + "/" + model_name + config.best_model_dir)
+		init['epoch'], init['worse_step'], model = model_utils.restore_latest_model(model,
 											config.checkpoint_dir + "/" + model_name + config.tmp_model_dir,
 											config.checkpoint_dir + "/" + model_name + config.best_model_dir)
 	config.check_ckpt(model_name)
@@ -146,17 +154,21 @@ def get_args():
 
 def main():
 	args = get_args()
-
+	config = Config.config
 	if args.train:
 		train(args.model_name, args.restore)
 	else:
 		import_lib()
-		dataset = Dataset.Dataset()
+		dataset = Dataset.EPWDataset()
+		# dataset = Dataset.Dataset()
 		model = PHVM.PHVM(len(dataset.vocab.id2featCate), len(dataset.vocab.id2featVal), len(dataset.vocab.id2word),
 						  len(dataset.vocab.id2category),
 						  key_wordvec=None, val_wordvec=None, tgt_wordvec=dataset.vocab.id2vec,
 						  type_vocab_size=len(dataset.vocab.id2type))
 
+		with tf.Session() as sess:
+			summary_writer = tf.summary.FileWriter('./graph_log/', model.graph)
+			print('graph done')
 		best_checkpoint_dir = config.checkpoint_dir + "/" + args.model_name + config.best_model_dir
 		tmp_checkpoint_dir = config.checkpoint_dir + "/" + args.model_name + config.tmp_model_dir
 		model_utils.restore_model(model, best_checkpoint_dir, tmp_checkpoint_dir)
