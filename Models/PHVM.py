@@ -241,9 +241,10 @@ class PHVM:
         with tf.variable_scope("embedding"):
             self.make_embedding(key_wordvec, val_wordvec, tgt_wordvec)
 
-            key_embed = tf.nn.embedding_lookup(self.key_embedding, self.input.key_input)
+            # key_embed = tf.nn.embedding_lookup(self.key_embedding, self.input.key_input)
             val_embed = tf.nn.embedding_lookup(self.val_embedding, self.input.val_input)
-            src = tf.concat((key_embed, val_embed), 2)
+            # src = tf.concat((key_embed, val_embed), 2)
+            src = val_embed
             cate_embed = tf.nn.embedding_lookup(self.cate_embedding, self.input.category)
             if self.config.PHVM_use_type_info:
                 type_embed = tf.nn.embedding_lookup(self.type_embedding, self.input.target_type)

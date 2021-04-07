@@ -37,9 +37,9 @@ class Config:
         # overall
         self.epoch = 100
         self.num_training_step = 900000
-        self.train_batch_size = 32
-        self.test_batch_size = 32
-        self.steps_per_stat = 10
+        self.train_batch_size = 128
+        self.test_batch_size = 128
+        self.steps_per_stat = 30
 
     def check_ckpt(self, model_name):
         if not os.path.exists(self.checkpoint_dir + "/" + model_name + "/"):
