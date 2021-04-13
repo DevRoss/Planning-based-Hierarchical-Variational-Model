@@ -122,10 +122,14 @@ def train(model_name, restore=True):
 	dataset.prepare_dataset()
 	logger = utils.get_logger(model_name)
 
-	model = PHVM.PHVM(len(dataset.vocab.id2featCate), len(dataset.vocab.id2featVal), len(dataset.vocab.id2word),
-					  len(dataset.vocab.id2category),
+	# model = PHVM.PHVM(len(dataset.vocab.id2featCate), len(dataset.vocab.id2featVal), len(dataset.vocab.id2word),
+	# 				  len(dataset.vocab.id2category),
+	# 				  key_wordvec=None, val_wordvec=None, tgt_wordvec=dataset.vocab.id2vec,
+	# 				  type_vocab_size=len(dataset.vocab.id2type))
+	model = PHVM.PHVM(None, None, len(dataset.vocab.id2word), None,
 					  key_wordvec=None, val_wordvec=None, tgt_wordvec=dataset.vocab.id2vec,
 					  type_vocab_size=len(dataset.vocab.id2type))
+	del dataset.vocab.id2vec
 	init = {'epoch': 0, 'worse_step': 0}
 	if restore:
 		print('='* 20)
@@ -162,8 +166,11 @@ def main():
 		import_lib()
 		dataset = Dataset.EPWDataset()
 		# dataset = Dataset.Dataset()
-		model = PHVM.PHVM(len(dataset.vocab.id2featCate), len(dataset.vocab.id2featVal), len(dataset.vocab.id2word),
-						  len(dataset.vocab.id2category),
+		# model = PHVM.PHVM(len(dataset.vocab.id2featCate), len(dataset.vocab.id2featVal), len(dataset.vocab.id2word),
+		# 				  len(dataset.vocab.id2category),
+		# 				  key_wordvec=None, val_wordvec=None, tgt_wordvec=dataset.vocab.id2vec,
+		# 				  type_vocab_sizid2type=len(dataset.vocab.id2type))
+		model = PHVM.PHVM(None, None, len(dataset.vocab.id2word), None,
 						  key_wordvec=None, val_wordvec=None, tgt_wordvec=dataset.vocab.id2vec,
 						  type_vocab_size=len(dataset.vocab.id2type))
 

@@ -24,10 +24,10 @@ class PHVMConfig:
 
         # embedding
         self.share_vocab = False
-        self.PHVM_word_dim = 300
-        self.PHVM_key_dim = 30
-        self.PHVM_val_dim = 100
-        self.PHVM_cate_dim = 10
+        self.PHVM_word_dim = 200
+        self.PHVM_key_dim = 200
+        self.PHVM_val_dim = 200
+        self.PHVM_cate_dim = 200
 
         # group
         self.PHVM_group_selection_threshold = 0.5
@@ -88,6 +88,7 @@ class PHVMConfig:
         # inference
         self.PHVM_beam_width = 10
         self.PHVM_maximum_iterations = 50
+        self.PHVM_share_emb = True
 
 
 class PHVM:
@@ -118,25 +119,31 @@ class PHVM:
 
     def get_input_tuple(self):
         return PHVMBatchInput(
-            key_input=tf.placeholder(shape=[None, None], dtype=tf.int32),
-            val_input=tf.placeholder(shape=[None, None], dtype=tf.int32),
-            input_lens=tf.placeholder(shape=[None], dtype=tf.int32),
+            key_input=tf.placeholder(shape=[None, None], dtype=tf.int32, name='key_input'), # 全部key, [batch, key_dim]
+            # key_input_emb=tf.placeholder(shape=[None, None, self.config.PHVM_key_dim], dtype=tf.int32, name='key_input_emb'), # 全部key, [batch, key_dim]
+            val_input=tf.placeholder(shape=[None, None], dtype=tf.int32, name='val_input'), # 全部value, [batch, value_dim]
+            # val_input_emb=tf.placeholder(shape=[None, None, self.config.PHVM_val_dim], dtype=tf.int32, name='val_input_emb'), # 全部value, [batch, value_dim]
+            input_lens=tf.placeholder(shape=[None], dtype=tf.int32, name='input_lens'),     # 每个instance中key-value对的个数, [batch, ]
 
-            target_input=tf.placeholder(shape=[None, None, None], dtype=tf.int32),
-            target_output=tf.placeholder(shape=[None, None, None], dtype=tf.int32),
-            output_lens=tf.placeholder(shape=[None, None], dtype=tf.int32),
+            target_input=tf.placeholder(shape=[None, None, None], dtype=tf.int32, name='target_input'), # 训练时，每一个小段的输入[batch, num_sub_sent, max_sub_sent_len]
+            # target_input_emb=tf.placeholder(shape=[None, None, None, self.config.PHVM_word_dim], dtype=tf.int32, name='target_input_emb'), # 训练时，每一个小段的输入[batch, num_sub_sent, max_sub_sent_len]
+            target_output=tf.placeholder(shape=[None, None, None], dtype=tf.int32, name='target_output'), # 训练时，每一个小段的输入[batch, num_sub_sent, max_sub_sent_len]
+            output_lens=tf.placeholder(shape=[None, None], dtype=tf.int32, name='output_lens'), # 每一个小段的长度 [batch, num_sub_sent]
 
-            group=tf.placeholder(shape=[None, None, None], dtype=tf.int32),
-            group_lens=tf.placeholder(shape=[None, None], dtype=tf.int32),
-            group_cnt=tf.placeholder(shape=[None], dtype=tf.int32),
+            group=tf.placeholder(shape=[None, None, None], dtype=tf.int32, name='group'), # 每个group的属性id（里面根据id排了序） [batch, group_num, group_len]
+            group_lens=tf.placeholder(shape=[None, None], dtype=tf.int32, name='group_lens'), # 每个group属性数，[batch, group_num]
+            group_cnt=tf.placeholder(shape=[None], dtype=tf.int32, name='grout_cnt'), # 每个instance的group数目，[batch, ]
 
-            target_type=tf.placeholder(shape=[None, None, None], dtype=tf.int32),
-            target_type_lens=tf.placeholder(shape=[None, None], dtype=tf.int32),
+            target_type=tf.placeholder(shape=[None, None, None], dtype=tf.int32, name='target_type'),   # 每个组的key [batch, group_num, key_num] # 即一个组包含哪些key
+            # target_type_emb=tf.placeholder(shape=[None, None, None, self.config.PHVM_type_dim], dtype=tf.int32, name='target_type_emb'),   # 每个组的key [batch, group_num, key_num] # 即一个组包含哪些key
+            target_type_lens=tf.placeholder(shape=[None, None], dtype=tf.int32, name='target_type_lens'),   # 每个组的key的长度 [batch, group_num]
 
-            text=tf.placeholder(shape=[None, None], dtype=tf.int32),
-            slens=tf.placeholder(shape=[None], dtype=tf.int32),
+            text=tf.placeholder(shape=[None, None], dtype=tf.int32, name='text'),   # 整个描述 [batch, desc_len]
+            # text_emb=tf.placeholder(shape=[None, None, self.config.PHVM_word_dim], dtype=tf.int32, name='text_emb'),   # 整个描述 [batch, desc_len]
+            slens=tf.placeholder(shape=[None], dtype=tf.int32, name='slens'),   # 整个描述的长度 [batch, ]
 
-            category=tf.placeholder(shape=[None], dtype=tf.int32)
+            category=tf.placeholder(shape=[None], dtype=tf.int32, name='category'), # 每个instance的类别[batch]，如裤子
+            # category_emb=tf.placeholder(shape=[None], dtype=tf.int32, name='category_emb') # 每个instance的类别[batch]，如裤子
         )
 
     def get_learning_rate(self):
@@ -160,42 +167,53 @@ class PHVM:
                        lambda: mu + tf.exp(logvar / 2) * x,
                        lambda: tf.expand_dims(mu, 1) + tf.exp(tf.expand_dims(logvar / 2, 1)) * x)
 
-    def make_embedding(self, key_wordvec, val_wordvec, tgt_wordvec):
-        if tgt_wordvec is None:
-            self.word_embedding = tf.get_variable("word_embedding",
-                                                  shape=[self.tgt_vocab_size, self.config.PHVM_word_dim],
-                                                  dtype=tf.float32)
-        else:
-            self.word_embedding = tf.get_variable("word_embedding", dtype=tf.float32,
-                                                  initializer=tf.constant(tgt_wordvec, dtype=tf.float32))
+    def make_embedding(self, key_wordvec, val_wordvec, tgt_wordvec, share_emb=False):
+        if not share_emb:
+            if tgt_wordvec is None:
+                self.word_embedding = tf.get_variable("word_embedding",
+                                                      shape=[self.tgt_vocab_size, self.config.PHVM_word_dim],
+                                                      dtype=tf.float32)
+            else:
+                self.word_embedding = tf.get_variable("word_embedding", dtype=tf.float32,
+                                                      initializer=tf.constant(tgt_wordvec, dtype=tf.float32))
 
-        if self.config.share_vocab:
-            self.val_embedding = self.word_embedding
-        else:
-            if val_wordvec is None:
-                self.val_embedding = tf.get_variable("val_embedding",
-                                                     shape=[self.val_vocab_size, self.config.PHVM_val_dim],
+            if self.config.share_vocab:
+                self.val_embedding = self.word_embedding
+            else:
+                if val_wordvec is None:
+                    self.val_embedding = tf.get_variable("val_embedding",
+                                                         shape=[self.val_vocab_size, self.config.PHVM_val_dim],
+                                                         dtype=tf.float32)
+                else:
+                    self.val_embedding = tf.get_variable("val_embedding", dtype=tf.float32,
+                                                         initializer=tf.constant(val_wordvec, dtype=tf.float32))
+
+            if key_wordvec is None:
+                self.key_embedding = tf.get_variable("key_embedding",
+                                                     shape=[self.key_vocab_size, self.config.PHVM_key_dim],
                                                      dtype=tf.float32)
             else:
-                self.val_embedding = tf.get_variable("val_embedding", dtype=tf.float32,
-                                                     initializer=tf.constant(val_wordvec, dtype=tf.float32))
+                self.key_embedding = tf.get_variable("key_embedding", dtype=tf.float32,
+                                                     initializer=tf.constant(key_wordvec, dtype=tf.float32))
 
-        if key_wordvec is None:
-            self.key_embedding = tf.get_variable("key_embedding",
-                                                 shape=[self.key_vocab_size, self.config.PHVM_key_dim],
-                                                 dtype=tf.float32)
-        else:
-            self.key_embedding = tf.get_variable("key_embedding", dtype=tf.float32,
-                                                 initializer=tf.constant(key_wordvec, dtype=tf.float32))
-
-        self.cate_embedding = tf.get_variable("cate_embedding",
-                                              shape=[self.cate_vocab_size, self.config.PHVM_cate_dim],
-                                              dtype=tf.float32)
-
-        if self.config.PHVM_use_type_info:
-            self.type_embedding = tf.get_variable("type_embedding",
-                                                  shape=[self.type_vocab_size, self.config.PHVM_type_dim],
+            self.cate_embedding = tf.get_variable("cate_embedding",
+                                                  shape=[self.cate_vocab_size, self.config.PHVM_cate_dim],
                                                   dtype=tf.float32)
+
+            if self.config.PHVM_use_type_info:
+                self.type_embedding = tf.get_variable("type_embedding",
+                                                      shape=[self.type_vocab_size, self.config.PHVM_type_dim],
+                                                      dtype=tf.float32)
+        else:
+            if tgt_wordvec is None:
+                self.word_embedding = tf.get_variable("word_embedding",
+                                                      shape=[self.tgt_vocab_size, self.config.PHVM_word_dim],
+                                                      dtype=tf.float32)
+            else:
+                self.word_embedding = tf.get_variable("word_embedding", dtype=tf.float32,
+                                                      initializer=tf.constant(tgt_wordvec, dtype=tf.float32), trainable=False)
+
+            self.type_embedding = self.cate_embedding = self.key_embedding = self.val_embedding = self.word_embedding
 
     def KL_divergence(self, prior_mu, prior_logvar, post_mu, post_logvar, reduce_mean=True):
         divergence = 0.5 * tf.reduce_sum(tf.exp(post_logvar - prior_logvar)
@@ -239,7 +257,7 @@ class PHVM:
         self.batch_size = tf.size(self.input.input_lens)
 
         with tf.variable_scope("embedding"):
-            self.make_embedding(key_wordvec, val_wordvec, tgt_wordvec)
+            self.make_embedding(key_wordvec, val_wordvec, tgt_wordvec, self.config.PHVM_key_dim)
 
             # key_embed = tf.nn.embedding_lookup(self.key_embedding, self.input.key_input)
             val_embed = tf.nn.embedding_lookup(self.val_embedding, self.input.val_input)
@@ -889,10 +907,13 @@ class PHVM:
                                   infer_body,
                                   loop_vars=(0, plan_state, sent_state, sent_z, translations),
                                   shape_invariants=shape_invariants)
-                self.stop = stop + tf.cast(tf.equal(stop, 0), dtype=tf.int32) * self.config.PHVM_max_sent_cnt
+                self.stop = tf.add(stop, tf.cast(tf.equal(stop, 0), dtype=tf.int32) * self.config.PHVM_max_sent_cnt, name='output_stop')
                 self.groups = groups
                 self.glens = glens
-                self.translations = translations[:, 1:, :]
+                # self.translations = translations[:, 1:, :]
+                translation_shape = tf.shape(translations)
+                self.translations = tf.slice(translations, [0, 1, 0], [translation_shape[0], translation_shape[1] - 1, translation_shape[2]], name='output_translate')
+                # self.translations = translations[:, 1:, :]
 
     def get_global_step(self):
         return self.sess.run(self.global_step)

@@ -132,12 +132,12 @@ class EPWDataset:
 
             order = [item[:2] for item in segment['order']]
             if len(order) == 0:
-                order = [['<SENT>', '<ADJ>']]
-            gid = [key_val.index((self.vocab.lookup(k, 0), self.vocab.lookup(v, val_tpe))) for k, v in order]
-            group.append(sorted(gid))
-            group_lens.append(len(group[-1]))
+                order = [['<SENT>', '<ADJ>']] # 没有的话用<SENT>和<ADJ>代替
+            gid = [key_val.index((self.vocab.lookup(k, 0), self.vocab.lookup(v, val_tpe))) for k, v in order] # 每个group里面的id
+            group.append(sorted(gid)) # 每个group的id（排序后）
+            group_lens.append(len(group[-1])) #
 
-            target_type.append([self.vocab.type2id[t] for t in segment['key_type']])
+            target_type.append([self.vocab.type2id[t] for t in segment['key_type']]) # 每个组的key
             target_type_lens.append(len(target_type[-1]))
 
         group_cnt = len(group)
