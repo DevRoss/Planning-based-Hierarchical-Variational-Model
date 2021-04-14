@@ -6,6 +6,7 @@
 import tensorflow as tf
 from tensorflow.contrib.seq2seq.python.ops import beam_search_ops
 from argparse import ArgumentParser
+import numpy as np
 
 
 def parse_args():
@@ -40,35 +41,35 @@ class PHVMOnline:
         with tf.gfile.GFile(self.config['pb_path'], "rb") as pb:
             graph_def = tf.GraphDef()
             graph_def.ParseFromString(pb.read())
-        self.graph = tf.Graph().as_default()
-        tf.import_graph_def(
-            graph_def,
-            name="",  # name可以自定义，修改name之后记得在下面的代码中也要改过来
-        )
-        self.val_input = self.graph.get_tensor_by_name('val_input:0')
-        self.input_lens = self.graph.get_tensor_by_name('input_lens:0')
-        self.text = self.graph.get_tensor_by_name('text:0')
-        self.slens = self.graph.get_tensor_by_name('slens:0')
-        self.category = self.graph.get_tensor_by_name('category:0')
-        self.keep_prob = self.graph.get_tensor_by_name('Placeholder:0')
-        self.train_flag = self.graph.get_tensor_by_name('Placeholder_1:0')
-        self.output_stop = self.graph.get_tensor_by_name('sentence_level/infer/output_stop:0')
-        self.output_translate = self.graph.get_tensor_by_name('sentence_level/infer/output_translate:0')
+        self.graph = tf.Graph()
+        with self.graph.as_default():
+            tf.import_graph_def(
+                graph_def,
+                name="",  # name可以自定义，修改name之后记得在下面的代码中也要改过来
+            )
+            self.val_input = self.graph.get_tensor_by_name('val_input:0')
+            self.input_lens = self.graph.get_tensor_by_name('input_lens:0')
+            self.text = self.graph.get_tensor_by_name('text:0')
+            self.slens = self.graph.get_tensor_by_name('slens:0')
+            self.category = self.graph.get_tensor_by_name('category:0')
+            self.keep_prob = self.graph.get_tensor_by_name('Placeholder:0')
+            self.train_flag = self.graph.get_tensor_by_name('Placeholder_1:0')
+            self.output_stop = self.graph.get_tensor_by_name('sentence_level/infer/output_stop:0')
+            self.output_translate = self.graph.get_tensor_by_name('sentence_level/infer/output_translate:0')
 
-        for op in self.graph.get_operations():
-            print(op.name, op.values())  # 打印网络结构
+        # for op in self.graph.get_operations():
+        #     print(op.name, op.values())  # 打印网络结构
 
     def infer(self, input_data):
         with tf.Session(graph=self.graph) as sess:
-            feed_dict = {self.val_input: '',
-                         self.input_lens: '',
-                         self.text: '',
-                         self.slens: '',
-                         self.category: '',
+            feed_dict = {self.val_input: np.random.random_integers(0, 10, size=(3, 4)),
+                         self.input_lens: np.array([4, 4, 4]),
+                         self.slens: np.array([1] * 50),
+                         self.category: np.random.random_integers(0, 2, size=(3,)),
                          self.train_flag: False,
                          self.keep_prob: 1
                          }
-            stop, groups, glens, translations = sess.run((self.output_stop, self.output_translate), feed_dict=feed_dict)
+            stop, translations = sess.run((self.output_stop, self.output_translate), feed_dict=feed_dict)
             return self._agg_group(stop, translations)
 
     def _agg_group(self, stop, text):
@@ -92,9 +93,15 @@ class PHVMOnline:
             translation[i] = [sent + [self.end_token] * (max_len - len(sent))]
         return translation
 
-    def main(args):
-        PHVMOnline(vars(args))
 
-    if __name__ == "__main__":
-        args = parse_args()
-        main(args)
+def main(args):
+    xx = PHVMOnline(vars(args))
+    import time
+    start = time.time()
+    xx.infer(None)
+    print('cost {}ms'.format((time.time() - start)* 1000))
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    main(args)

@@ -120,13 +120,13 @@ class PHVM:
     def get_input_tuple(self):
         return PHVMBatchInput(
             key_input=tf.placeholder(shape=[None, None], dtype=tf.int32, name='key_input'), # 全部key, [batch, key_dim]
-            # key_input_emb=tf.placeholder(shape=[None, None, self.config.PHVM_key_dim], dtype=tf.int32, name='key_input_emb'), # 全部key, [batch, key_dim]
+            key_input_emb=tf.placeholder(shape=[None, None, self.config.PHVM_key_dim], dtype=tf.int32, name='key_input_emb'), # 全部key, [batch, key_dim]
             val_input=tf.placeholder(shape=[None, None], dtype=tf.int32, name='val_input'), # 全部value, [batch, value_dim]
-            # val_input_emb=tf.placeholder(shape=[None, None, self.config.PHVM_val_dim], dtype=tf.int32, name='val_input_emb'), # 全部value, [batch, value_dim]
+            val_input_emb=tf.placeholder(shape=[None, None, self.config.PHVM_val_dim], dtype=tf.int32, name='val_input_emb'), # 全部value, [batch, value_dim]
             input_lens=tf.placeholder(shape=[None], dtype=tf.int32, name='input_lens'),     # 每个instance中key-value对的个数, [batch, ]
 
             target_input=tf.placeholder(shape=[None, None, None], dtype=tf.int32, name='target_input'), # 训练时，每一个小段的输入[batch, num_sub_sent, max_sub_sent_len]
-            # target_input_emb=tf.placeholder(shape=[None, None, None, self.config.PHVM_word_dim], dtype=tf.int32, name='target_input_emb'), # 训练时，每一个小段的输入[batch, num_sub_sent, max_sub_sent_len]
+            target_input_emb=tf.placeholder(shape=[None, None, None, self.config.PHVM_word_dim], dtype=tf.int32, name='target_input_emb'), # 训练时，每一个小段的输入[batch, num_sub_sent, max_sub_sent_len]
             target_output=tf.placeholder(shape=[None, None, None], dtype=tf.int32, name='target_output'), # 训练时，每一个小段的输入[batch, num_sub_sent, max_sub_sent_len]
             output_lens=tf.placeholder(shape=[None, None], dtype=tf.int32, name='output_lens'), # 每一个小段的长度 [batch, num_sub_sent]
 
@@ -135,15 +135,15 @@ class PHVM:
             group_cnt=tf.placeholder(shape=[None], dtype=tf.int32, name='grout_cnt'), # 每个instance的group数目，[batch, ]
 
             target_type=tf.placeholder(shape=[None, None, None], dtype=tf.int32, name='target_type'),   # 每个组的key [batch, group_num, key_num] # 即一个组包含哪些key
-            # target_type_emb=tf.placeholder(shape=[None, None, None, self.config.PHVM_type_dim], dtype=tf.int32, name='target_type_emb'),   # 每个组的key [batch, group_num, key_num] # 即一个组包含哪些key
+            target_type_emb=tf.placeholder(shape=[None, None, None, self.config.PHVM_type_dim], dtype=tf.int32, name='target_type_emb'),   # 每个组的key [batch, group_num, key_num] # 即一个组包含哪些key
             target_type_lens=tf.placeholder(shape=[None, None], dtype=tf.int32, name='target_type_lens'),   # 每个组的key的长度 [batch, group_num]
 
             text=tf.placeholder(shape=[None, None], dtype=tf.int32, name='text'),   # 整个描述 [batch, desc_len]
-            # text_emb=tf.placeholder(shape=[None, None, self.config.PHVM_word_dim], dtype=tf.int32, name='text_emb'),   # 整个描述 [batch, desc_len]
+            text_emb=tf.placeholder(shape=[None, None, self.config.PHVM_word_dim], dtype=tf.int32, name='text_emb'),   # 整个描述 [batch, desc_len]
             slens=tf.placeholder(shape=[None], dtype=tf.int32, name='slens'),   # 整个描述的长度 [batch, ]
 
             category=tf.placeholder(shape=[None], dtype=tf.int32, name='category'), # 每个instance的类别[batch]，如裤子
-            # category_emb=tf.placeholder(shape=[None], dtype=tf.int32, name='category_emb') # 每个instance的类别[batch]，如裤子
+            category_emb=tf.placeholder(shape=[None], dtype=tf.int32, name='category_emb') # 每个instance的类别[batch]，如裤子
         )
 
     def get_learning_rate(self):
@@ -260,12 +260,15 @@ class PHVM:
             self.make_embedding(key_wordvec, val_wordvec, tgt_wordvec, self.config.PHVM_key_dim)
 
             # key_embed = tf.nn.embedding_lookup(self.key_embedding, self.input.key_input)
-            val_embed = tf.nn.embedding_lookup(self.val_embedding, self.input.val_input)
+            # val_embed = tf.nn.embedding_lookup(self.val_embedding, self.input.val_input)
+            val_embed = self.input.val_input_emb
             # src = tf.concat((key_embed, val_embed), 2)
             src = val_embed
-            cate_embed = tf.nn.embedding_lookup(self.cate_embedding, self.input.category)
+            # cate_embed = tf.nn.embedding_lookup(self.cate_embedding, self.input.category)
+            cate_embed = self.input.category_emb
             if self.config.PHVM_use_type_info:
-                type_embed = tf.nn.embedding_lookup(self.type_embedding, self.input.target_type)
+                # type_embed = tf.nn.embedding_lookup(self.type_embedding, self.input.target_type)
+                type_embed = self.input.target_type_emb
                 type_mask = tf.sequence_mask(self.input.target_type_lens,
                                              tf.shape(self.input.target_type)[2],
                                              dtype=tf.float32)
@@ -275,7 +278,8 @@ class PHVM:
                                         tf.cast(tf.equal(self.input.target_type_lens, 0), dtype=tf.int32)
                 type_embed = type_embed / tf.cast(tf.expand_dims(safe_target_type_lens, 2), dtype=tf.float32)
 
-            text = tf.nn.embedding_lookup(self.word_embedding, self.input.text)
+            # text = tf.nn.embedding_lookup(self.word_embedding, self.input.text)
+            text = self.input.text_emb
 
         with tf.variable_scope("input_encode"):
             if self.config.PHVM_rnn_direction == 'uni':
@@ -449,7 +453,8 @@ class PHVM:
 
                 def train_body(i, group_state, gbow, plan_state, sent_state, sent_z,
                                stop_sign, sent_rec_loss, group_rec_loss, KL_loss, type_loss, bow_loss):
-                    sent_input = tf.nn.embedding_lookup(self.word_embedding, self.input.target_input[:, i, :])
+                    # sent_input = tf.nn.embedding_lookup(self.word_embedding, self.input.target_input[:, i, :])
+                    sent_input = self.input.target_input_emb[:, i, :]
                     sent_output = self.input.target_output[:, i, :]
                     sent_lens = self.input.output_lens[:, i]
                     sent_mask = tf.sequence_mask(sent_lens, tf.shape(sent_output)[1], dtype=tf.float32)
@@ -716,11 +721,19 @@ class PHVM:
                                         item += [[0, 0]] * (max_gcnt - len(item))
                                 return np.array(gid, dtype=np.int32), np.array(glen, dtype=np.int32)
 
+                            # def tf_select(group_prob, max_gcnt):
+                            #
+                            #     gid = tf.zeros((tf.shape(group_prob)[0], max_gcnt, 2), dtype=tf.int32)
+
+
+
                             src_mask = tf.sequence_mask(self.input.input_lens, tf.shape(group_logit)[1],
                                                         dtype=tf.float32)
                             group_prob = tf.sigmoid(group_logit) * src_mask
                             gid, glen = tf.py_func(select, [group_prob, tf.shape(src_encoder_output)[1]],
                                                    [tf.int32, tf.int32])
+                            # self.group_shape = tf.shape(group_prob)
+
                             gid = tf.reshape(gid, (self.batch_size, -1, 2))
                             glen = tf.reshape(glen, (-1,))
                             expanded_glen = tf.expand_dims(glen, 1)
@@ -868,6 +881,7 @@ class PHVM:
                                                                     memory_sequence_length=sent_glen)
                         infer_encoder = tf.contrib.seq2seq.AttentionWrapper(decoder, att,
                                                                             attention_layer_size=self.config.PHVM_decoder_dim)
+                        # sent_input = tf.nn.embedding_lookup(self.word_embedding, sent_output)
                         sent_input = tf.nn.embedding_lookup(self.word_embedding, sent_output)
                         encoder_state = infer_encoder.zero_state(self.batch_size, dtype=tf.float32).clone(
                             cell_state=sent_dec_state)
@@ -945,6 +959,9 @@ class PHVM:
         feed_dict[self.keep_prob] = 1
         feed_dict[self.train_flag] = False
         stop, groups, glens, translations = self.sess.run((self.stop, self.groups, self.glens, self.translations), feed_dict=feed_dict)
+
+        # shape = self.sess.run((self.group_shape), feed_dict=feed_dict)
+        # print(shape)
         return self._agg_group(stop, translations)
 
     def _agg_group(self, stop, text):
